@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - TBD
 
+### Fixed
+
+- Preflight TAR and ZIP downloads before extraction, rejecting escaping paths,
+  links, special entries, colliding member names, and linked destinations. Safe
+  nested regular files retain the existing file-or-directory return shape; a
+  failed extraction retains its archive. Extracted ownership and permissions are
+  not restored, and the destination must be protected from concurrent changes.
+- Reject path-bearing filenames derived from download response headers or URLs;
+  explicit caller-supplied filenames retain their existing precedence.
+
 ### Added
 
 - **PTAB API 3.0 Support**: New clients for PTAB trials, appeals, and interferences
