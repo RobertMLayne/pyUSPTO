@@ -18,6 +18,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from pyUSPTO.clients._archive import extract_archive, validate_remote_filename
 from pyUSPTO.config import USPTOConfig
 from pyUSPTO.exceptions import (
     APIErrorArgs,
@@ -534,6 +535,7 @@ class BaseUSPTOClient(Generic[T]):
 
         Raises:
             FileExistsError: If file exists and overwrite is False
+            ValueError: If a remotely derived filename is unsafe
         """
         filename: str | None = None
 
@@ -560,6 +562,9 @@ class BaseUSPTOClient(Generic[T]):
                 else:
                     filename = "download"
 
+            # Headers and decoded URL names are remote data, not caller paths.
+            validate_remote_filename(filename)
+
         if destination:
             dest_path = Path(destination)
             dest_path.mkdir(parents=True, exist_ok=True)
@@ -585,7 +590,12 @@ class BaseUSPTOClient(Generic[T]):
         extract_to: Path | None = None,
         remove_archive: bool = False,
     ) -> str:
-        """Extract TAR or ZIP archive.
+        """Extract safe ordinary files from a TAR or ZIP archive.
+
+        All members are checked before extraction writes. Links, special files,
+        escaping names and linked destinations are rejected; ownership and
+        permissions are not restored. Keep the destination private from
+        concurrent changes. A failed extraction retains its original archive.
 
         Args:
             archive_path: Path to archive file
@@ -596,27 +606,12 @@ class BaseUSPTOClient(Generic[T]):
             Path to extracted content (single file: path to file, multiple files: directory path)
 
         Raises:
-            ValueError: If file is not a valid TAR or ZIP archive
+            ValueError: If the archive, its members or the destination are unsafe
         """
-        import tarfile
-        import zipfile
-
         if extract_to is None:
             extract_to = archive_path.parent / archive_path.stem
 
-        extract_to.mkdir(parents=True, exist_ok=True)
-
-        extracted_items = []
-        if tarfile.is_tarfile(archive_path):
-            with tarfile.open(archive_path, "r:*") as tar:
-                tar.extractall(path=extract_to)
-                extracted_items = [m.name for m in tar.getmembers() if m.isfile()]
-        elif zipfile.is_zipfile(archive_path):
-            with zipfile.ZipFile(archive_path, "r") as zip_ref:
-                zip_ref.extractall(extract_to)
-                extracted_items = [n for n in zip_ref.namelist() if not n.endswith("/")]
-        else:
-            raise ValueError(f"Not a valid TAR/ZIP archive: {archive_path}")
+        extracted_items = extract_archive(archive_path, extract_to)
 
         if remove_archive:
             archive_path.unlink()
